@@ -7,6 +7,10 @@ import customtkinter as ctk
 from dao.producto_dao import ProductoDAO
 from dao.venta_dao import VentaDAO
 from dao.reporte_dao import ReporteDAO
+from dao.categoria_dao import CategoriaDAO
+from dao.proveedor_dao import ProveedorDAO
+from modelos.categoria import Categoria
+from modelos.proveedor import Proveedor
 from modelos.producto import Producto
 
 
@@ -23,6 +27,8 @@ class MercadoExpressApp(ctk.CTk):
         self.productos = ProductoDAO()
         self.ventas = VentaDAO()
         self.reportes = ReporteDAO()
+        self.categorias = CategoriaDAO()
+        self.proveedores = ProveedorDAO()
 
         ctk.CTkLabel(self, text="MERCADO EXPRESS", font=("Arial", 25, "bold")).pack(pady=(18, 6))
         self.tabs = ctk.CTkTabview(self)
@@ -30,9 +36,13 @@ class MercadoExpressApp(ctk.CTk):
         self.tab_productos = self.tabs.add("Productos")
         self.tab_ventas = self.tabs.add("Ventas")
         self.tab_reportes = self.tabs.add("Reportes SQL")
+        self.tab_categorias = self.tabs.add("Categorías")
+        self.tab_proveedores = self.tabs.add("Proveedores")
         self.crear_productos()
         self.crear_ventas()
         self.crear_reportes()
+        self.crear_categorias()
+        self.crear_proveedores()
         self.refrescar()
 
     def tabla(self, padre, columnas):
@@ -156,6 +166,8 @@ class MercadoExpressApp(ctk.CTk):
     def refrescar(self):
         productos = self.productos.listar()
         self.cargar_tabla(self.tabla_productos, [(p.id, p.nombre, f"{p.precio:.2f}", p.stock) for p in productos])
+        self.cargar_tabla(self.tabla_categorias, [(c.id, c.nombre, c.descripcion) for c in self.categorias.listar()])
+        self.cargar_tabla(self.tabla_proveedores, [(p.id, p.nombre, p.telefono, p.email) for p in self.proveedores.listar()])
         ventas = self.ventas.listar()
         self.cargar_tabla(self.tabla_ventas, [(v["id"], v["producto"], v["cantidad"], f'{v["total"]:.2f}', v["fecha"]) for v in ventas])
 
@@ -178,4 +190,94 @@ class MercadoExpressApp(ctk.CTk):
                 widget.destroy()
             self.tabla_reporte = self.tabla(self.marco_reporte, columnas)
             self.cargar_tabla(self.tabla_reporte, filas)
+        self.ejecutar_seguro(operacion)
+
+    def crear_categorias(self):
+        formulario = ctk.CTkFrame(self.tab_categorias)
+        formulario.pack(fill="x", padx=12, pady=8)
+        self.cat_nombre = self.campo(formulario, "Nombre", 160)
+        self.cat_descripcion = self.campo(formulario, "Descripción", 220)
+        ctk.CTkButton(formulario, text="Crear categoría", command=self.agregar_categoria).pack(side="left", padx=6)
+        self.tabla_categorias = self.tabla(self.tab_categorias, ("id", "nombre", "descripcion"))
+        asociacion = ctk.CTkFrame(self.tab_categorias)
+        asociacion.pack(fill="x", padx=12, pady=6)
+        self.cat_producto_id = self.campo(asociacion, "ID producto", 120)
+        ctk.CTkButton(asociacion, text="Asociar a categoría seleccionada", command=self.asociar_categoria).pack(side="left", padx=6)
+        ctk.CTkButton(asociacion, text="Ver productos por categoría", command=lambda: self.mostrar_consulta(self.categorias.productos_por_categoria, ("categoria", "producto", "precio"))).pack(side="left", padx=6)
+        ctk.CTkButton(asociacion, text="Sin productos", command=lambda: self.mostrar_consulta(self.categorias.categorias_sin_productos, ("id", "nombre"))).pack(side="left", padx=6)
+        ctk.CTkButton(self.tab_categorias, text="Categorías con 2 o más productos", command=lambda: self.mostrar_consulta(lambda: self.categorias.categorias_con_varios_productos(2), ("categoria", "cantidad"))).pack(pady=4)
+
+    def crear_proveedores(self):
+        formulario = ctk.CTkFrame(self.tab_proveedores)
+        formulario.pack(fill="x", padx=12, pady=8)
+        self.prov_nombre = self.campo(formulario, "Nombre", 160)
+        self.prov_telefono = self.campo(formulario, "Teléfono", 150)
+        self.prov_email = self.campo(formulario, "Email", 210)
+        ctk.CTkButton(formulario, text="Crear proveedor", command=self.agregar_proveedor).pack(side="left", padx=6)
+        self.tabla_proveedores = self.tabla(self.tab_proveedores, ("id", "nombre", "telefono", "email"))
+        asociacion = ctk.CTkFrame(self.tab_proveedores)
+        asociacion.pack(fill="x", padx=12, pady=6)
+        self.prov_producto_id = self.campo(asociacion, "ID producto", 120)
+        ctk.CTkButton(asociacion, text="Asociar a proveedor seleccionado", command=self.asociar_proveedor).pack(side="left", padx=6)
+        ctk.CTkButton(asociacion, text="Ver catálogo", command=lambda: self.mostrar_consulta(self.proveedores.catalogo_por_proveedor, ("proveedor", "producto", "stock"))).pack(side="left", padx=6)
+        ctk.CTkButton(asociacion, text="Sin productos", command=lambda: self.mostrar_consulta(self.proveedores.proveedores_sin_productos, ("id", "nombre"))).pack(side="left", padx=6)
+        ctk.CTkButton(self.tab_proveedores, text="Proveedores sobre el promedio", command=lambda: self.mostrar_consulta(self.proveedores.proveedores_con_mas_productos_que_promedio, ("proveedor", "cantidad"))).pack(pady=4)
+
+    def id_seleccionado(self, tabla, entidad):
+        seleccion = tabla.selection()
+        if not seleccion:
+            raise ValueError(f"Seleccioná un registro de {entidad}")
+        return int(tabla.item(seleccion[0], "values")[0])
+
+    def agregar_categoria(self):
+        def operacion():
+            nombre = self.cat_nombre.get().strip()
+            if not nombre:
+                raise ValueError("Ingresá el nombre de la categoría")
+            self.categorias.agregar(Categoria(nombre, self.cat_descripcion.get().strip()))
+            self.cat_nombre.delete(0, tk.END)
+            self.cat_descripcion.delete(0, tk.END)
+            self.refrescar()
+        self.ejecutar_seguro(operacion)
+
+    def agregar_proveedor(self):
+        def operacion():
+            nombre = self.prov_nombre.get().strip()
+            if not nombre:
+                raise ValueError("Ingresá el nombre del proveedor")
+            self.proveedores.agregar(Proveedor(nombre, self.prov_telefono.get().strip(), self.prov_email.get().strip()))
+            for entrada in (self.prov_nombre, self.prov_telefono, self.prov_email):
+                entrada.delete(0, tk.END)
+            self.refrescar()
+        self.ejecutar_seguro(operacion)
+
+    def asociar_categoria(self):
+        def operacion():
+            categoria_id = self.id_seleccionado(self.tabla_categorias, "categorías")
+            producto_id = int(self.cat_producto_id.get())
+            if producto_id <= 0:
+                raise ValueError("El ID del producto debe ser positivo")
+            self.categorias.asignar_producto(categoria_id, producto_id)
+            messagebox.showinfo("Categorías", "Producto asociado correctamente")
+        self.ejecutar_seguro(operacion)
+
+    def asociar_proveedor(self):
+        def operacion():
+            proveedor_id = self.id_seleccionado(self.tabla_proveedores, "proveedores")
+            producto_id = int(self.prov_producto_id.get())
+            if producto_id <= 0:
+                raise ValueError("El ID del producto debe ser positivo")
+            self.proveedores.asignar_producto(proveedor_id, producto_id)
+            messagebox.showinfo("Proveedores", "Producto asociado correctamente")
+        self.ejecutar_seguro(operacion)
+
+    def mostrar_consulta(self, consulta, columnas):
+        def operacion():
+            filas = consulta()
+            ventana = ctk.CTkToplevel(self)
+            ventana.title("Mercado Express | Consulta SQL")
+            ventana.geometry("760x440")
+            tabla = self.tabla(ventana, columnas)
+            self.cargar_tabla(tabla, filas)
+            ventana.lift()
         self.ejecutar_seguro(operacion)
